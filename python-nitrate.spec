@@ -1,35 +1,79 @@
 Name: python-nitrate
 Version: 1.5
-Release: 0%{?dist}
+Release: 3%{?dist}
 
 Summary: Python API for the Nitrate test case management system
-Group: Development/Languages
-License: LGPLv2
+License: LGPLv2+
 
 URL: https://github.com/psss/python-nitrate
-Source0: https://github.com/psss/python-nitrate/releases/download/%{version}/python-nitrate-%{version}.tar.bz2
+Source0: %{url}/releases/download/%{version}/%{name}-%{version}.tar.bz2
+
+# Depending on the distro, we set some defaults.
+# Note that the bcond macros are named for the CLI option they create.
+# "%%bcond_without" means "ENABLE by default and create a --without option"
+
+# Fedora or RHEL 8+
+%if 0%{?fedora} || 0%{?rhel} > 7
+%bcond_with oldreqs
+%bcond_with englocale
+%else
+# The automatic runtime dependency generator doesn't exist yet
+%bcond_without oldreqs
+# The C.UTF-8 locale doesn't exist, Python defaults to C (ASCII)
+%bcond_without englocale
+%endif
+
+# For older Fedora and RHEL build python2-nitrate as well
+%if 0%{?fedora} > 31 || 0%{?rhel} > 7
+%bcond_with python2
+%else
+%bcond_without python2
+%endif
 
 BuildArch: noarch
-BuildRequires: git
-BuildRequires: python3-devel python3-six
+BuildRequires: git-core
+BuildRequires: python%{python3_pkgversion}-devel
+BuildRequires: python%{python3_pkgversion}-setuptools
+BuildRequires: python%{python3_pkgversion}-six
+%if %{with python2}
+BuildRequires: python2-devel
+BuildRequires: python2-setuptools
+BuildRequires: python2-six
+%endif
 
-%global _description\
-python-nitrate is a Python interface to the Nitrate test case\
-management system. The package consists of a high-level Python\
-module (provides natural object interface), a low-level driver\
-(allows to directly access Nitrate's XMLRPC API) and a command\
-line interpreter (useful for fast debugging and experimenting).
+%global _description %{expand:
+A Python interface to the Nitrate test case management system.
+The package consists of a high-level Python module (provides
+natural object interface), a low-level driver (allows to directly
+access Nitrate XMLRPC API) and a command line interpreter (useful
+for fast debugging and experimenting).}
 
 %description %_description
 
-%package -n python3-nitrate
-Summary: %summary
-%if 0%{?rhel}
-Requires: python-gssapi python-psycopg2
-%else
-Requires: python3-gssapi python3-psycopg2
+# Python 2
+%if %{with python2}
+%package -n python2-nitrate
+Summary: %{summary}
+%{?python_provide:%python_provide python2-nitrate}
+%if %{with oldreqs}
+Requires: python2-gssapi
+Requires: python2-psycopg2
+Requires: python2-six
 %endif
+
+%description -n python2-nitrate %_description
+%endif
+
+# Python 3
+%package -n python3-nitrate
+Summary: %{summary}
 %{?python_provide:%python_provide python3-nitrate}
+%if %{with oldreqs}
+Requires: python%{python3_pkgversion}-gssapi
+Requires: python%{python3_pkgversion}-psycopg2
+Requires: python%{python3_pkgversion}-six
+%endif
+Conflicts: python2-nitrate < 1.5-3
 
 %description -n python3-nitrate %_description
 
@@ -37,22 +81,52 @@ Requires: python3-gssapi python3-psycopg2
 %autosetup -S git
 
 %build
+%if %{with englocale}
+export LANG=en_US.utf-8
+%endif
+%if %{with python2}
+%py2_build
+%endif
+%py3_build
 
 %install
-mkdir -p %{buildroot}%{_bindir}
+%if %{with englocale}
+export LANG=en_US.utf-8
+%endif
+%if %{with python2}
+%py2_install
+%endif
+%py3_install
 mkdir -p %{buildroot}%{_mandir}/man1
-mkdir -p %{buildroot}%{python3_sitelib}/nitrate
-install -pm 755 source/nitrate %{buildroot}%{_bindir}
-install -pm 644 source/*.py %{buildroot}%{python3_sitelib}/nitrate
 install -pm 644 docs/*.1.gz %{buildroot}%{_mandir}/man1
+# Workaround for https://bugzilla.redhat.com/show_bug.cgi?id=1335203
+pathfix.py -pni "%{__python3} %{py3_shbang_opts}i" %{buildroot}%{_bindir}/nitrate
+
+%if %{with python2}
+%files -n python2-nitrate
+%{python2_sitelib}/nitrate/
+%{python2_sitelib}/nitrate-*.egg-info/
+%license LICENSE
+%endif
 
 %files -n python3-nitrate
+%{python3_sitelib}/nitrate/
+%{python3_sitelib}/nitrate-*.egg-info/
 %{_mandir}/man1/*
 %{_bindir}/nitrate
-%{python3_sitelib}/*
-%doc COPYING README examples
+%doc README examples
+%license LICENSE
 
 %changelog
+* Wed Nov 20 2019 Petr Šplíchal <psplicha@redhat.com> - 1.5-3
+- For older releases build both python2 and python3 packages
+- Include conflicting files only in the python3 package
+
+* Mon Nov 11 2019 Petr Šplíchal <psplicha@redhat.com> - 1.5-2
+- Use py3_build and py3_install to simplify spec
+- Rename and explicitly list the license file
+- Remove group, fix license, add missing requires
+
 * Mon Nov 04 2019 Martin Zeleny <mzeleny@redhat.com> 1.5-0
 - Ported to Python 3
 
